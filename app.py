@@ -1,5 +1,6 @@
 import os
 import re
+import sqlite3
 import html as html_lib
 from urllib.parse import quote
 from datetime import datetime, timedelta
@@ -12,6 +13,47 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+
+# ── SQLite DB 초기화 ─────────────────────────────────────────
+DB_DIR  = os.path.join(os.path.dirname(__file__), 'data')
+DB_PATH = os.path.join(DB_DIR, 'news_storage.db')
+
+def init_db():
+    os.makedirs(DB_DIR, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS news_table (
+                id      TEXT PRIMARY KEY,
+                title   TEXT,
+                link    TEXT,
+                snippet TEXT,
+                source  TEXT,
+                date    TEXT,
+                lang    TEXT,
+                cat     TEXT,
+                kw      TEXT
+            )
+        ''')
+        conn.commit()
+    finally:
+        conn.close()
+
+init_db()
+
+
+def save_to_db(items: list):
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.executemany(
+            '''INSERT OR IGNORE INTO news_table
+               (id, title, link, snippet, source, date, lang, cat, kw)
+               VALUES (:id, :title, :link, :snippet, :source, :date, :lang, :cat, :kw)''',
+            items
+        )
+        conn.commit()
+    finally:
+        conn.close()
 
 # ── Google News RSS ─────────────────────────────────────────
 LANG_PARAMS = {
@@ -170,6 +212,9 @@ def fetch_news():
             'cat':     cat,
             'kw':      keyword,
         })
+
+    if items:
+        save_to_db(items)
 
     return jsonify({'items': items, 'count': len(items)})
 
