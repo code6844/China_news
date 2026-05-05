@@ -7,6 +7,7 @@
 <title>동북아 뉴스 대시보드</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 :root{--bg:#0d1117;--bg2:#161b22;--bg3:#1c2128;--bgs:#10131c;--txt:#e6edf3;--txt2:#8b949e;--txt3:#6e7681;--blue:#388bfd;--green:#3fb950;--red:#f85149;--yellow:#d29922;--purple:#a371f7;--border:#30363d;--borderl:#21262d;color-scheme:dark}
 [data-theme="light"]{--bg:#ffffff;--bg2:#f6f8fa;--bg3:#eaeef2;--bgs:#f0f2f5;--txt:#1c2128;--txt2:#57606a;--txt3:#8c959f;--blue:#0969da;--green:#1a7f37;--red:#cf222e;--yellow:#9a6700;--purple:#8250df;--border:#d0d7de;--borderl:#d8dee4;color-scheme:light}
@@ -428,6 +429,7 @@ body.sidebar-open #sidebar{left:0}
         <h2>🤖 AI 분석 리포트</h2>
         <span class="ai-badge">Claude AI</span>
         <span id="ai-model" style="font-size:.65rem;color:var(--txt3);margin-left:auto"></span>
+        <button id="btn-pdf" onclick="downloadPDF()" style="display:none;margin-left:8px;padding:3px 11px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--txt2);font-size:.72rem;cursor:pointer;transition:all .15s;white-space:nowrap" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'" onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--txt2)'">📄 PDF 저장</button>
       </div>
       <div id="ai-content" class="ai-ph">
         뉴스를 수집한 후 <strong style="color:var(--purple)">Claude AI 분석</strong> 버튼을 눌러주세요.
@@ -1272,6 +1274,7 @@ async function runAI(){
   if(!f.length){toast('분석할 뉴스가 없습니다','err');return;}
   const btn=document.getElementById('btn-ai');
   btn.disabled=true;btn.textContent='분석 중…';
+  document.getElementById('btn-pdf').style.display='none';
   const aiDiv=document.getElementById('ai-content');
   aiDiv.className='';
   aiDiv.innerHTML='<div style="display:flex;align-items:center;gap:9px;color:var(--txt3);padding:20px"><span class="spin"></span> Claude AI가 분석 중입니다…</div>';
@@ -1284,6 +1287,7 @@ async function runAI(){
     aiDiv.className='ai-text';
     aiDiv.innerHTML=md2html(d.text)+`<div class="ai-footer">분석 일시: ${new Date().toLocaleString('ko-KR')} &nbsp;·&nbsp; 모델: ${d.model||''}</div>`;
     document.getElementById('ai-model').textContent=d.model||'';
+    document.getElementById('btn-pdf').style.display='';
     setStatus('✓ AI 분석 완료');toast('AI 분석 완료','ok');
   }catch(e){
     aiDiv.className='ai-text';
@@ -1291,6 +1295,49 @@ async function runAI(){
     setStatus('분석 오류: '+e.message);toast('분석 실패','err');
   }
   btn.disabled=false;btn.textContent='🤖 Claude AI 분석';
+}
+
+// ── PDF 다운로드 ─────────────────────────────────────────
+function downloadPDF(){
+  const content=document.getElementById('ai-content');
+  if(!content||content.classList.contains('ai-ph')){toast('분석 리포트가 없습니다','err');return;}
+  const model=document.getElementById('ai-model').textContent;
+  const dateStr=new Date().toLocaleString('ko-KR');
+  const fileDate=new Date().toLocaleDateString('ko-KR').replace(/\.\s*/g,'').replace(/\.$/,'');
+
+  const el=document.createElement('div');
+  el.style.cssText='font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans KR",sans-serif;padding:36px;background:#ffffff;color:#1c2128;width:760px;line-height:1.75;position:absolute;left:-9999px;top:0';
+  el.innerHTML=`
+    <div style="border-bottom:2px solid #0969da;padding-bottom:14px;margin-bottom:24px">
+      <div style="font-size:21px;font-weight:700;color:#0969da;margin-bottom:5px">🌐 동북아 뉴스 분석 리포트</div>
+      <div style="font-size:11px;color:#57606a">생성: ${dateStr}${model?' &nbsp;·&nbsp; '+model:''}</div>
+    </div>
+    <div id="_pdf_body"></div>`;
+
+  const body=el.querySelector('#_pdf_body');
+  body.innerHTML=content.innerHTML;
+  body.querySelectorAll('h2').forEach(h=>{h.style.cssText='font-size:15px;font-weight:700;color:#1c2128;margin:20px 0 8px;padding-bottom:6px;border-bottom:1px solid #d0d7de';});
+  body.querySelectorAll('h3').forEach(h=>{h.style.cssText='font-size:13px;font-weight:700;color:#1c2128;margin:14px 0 5px';});
+  body.querySelectorAll('p').forEach(p=>{p.style.cssText='font-size:12px;color:#24292f;margin-bottom:8px';});
+  body.querySelectorAll('ul').forEach(u=>{u.style.cssText='padding-left:20px;margin-bottom:8px';});
+  body.querySelectorAll('li').forEach(l=>{l.style.cssText='font-size:12px;color:#24292f;margin-bottom:3px';});
+  body.querySelectorAll('strong').forEach(s=>{s.style.cssText='font-weight:700;color:#1c2128';});
+  body.querySelectorAll('.ai-footer').forEach(f=>{f.style.cssText='margin-top:20px;padding-top:10px;border-top:1px solid #d0d7de;font-size:10px;color:#57606a';});
+
+  document.body.appendChild(el);
+  const btn=document.getElementById('btn-pdf');
+  btn.textContent='⏳ 생성 중…';btn.disabled=true;
+  html2pdf().set({
+    margin:12,
+    filename:`동북아뉴스분석_${fileDate}.pdf`,
+    image:{type:'jpeg',quality:0.97},
+    html2canvas:{scale:2,useCORS:true,logging:false},
+    jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
+  }).from(el).save().then(()=>{
+    document.body.removeChild(el);
+    btn.textContent='📄 PDF 저장';btn.disabled=false;
+    toast('PDF 저장 완료','ok');
+  });
 }
 
 // ── Markdown → HTML ──────────────────────────────────────
