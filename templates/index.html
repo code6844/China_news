@@ -591,6 +591,22 @@ body.sidebar-open #sidebar{left:0}
 </main>
 <div id="toast"></div>
 
+<div id="long-fetch-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(3px)">
+  <div style="background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:26px 24px;max-width:360px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.5)">
+    <div style="font-size:1.6rem;margin-bottom:10px">⏳</div>
+    <h3 style="font-size:.95rem;font-weight:700;color:var(--txt);margin-bottom:8px">수집 기간이 3년을 초과합니다</h3>
+    <p style="font-size:.8rem;color:var(--txt2);line-height:1.65;margin-bottom:18px">기간이 길수록 수집 요청 횟수가 많아져 완료까지 시간이 오래 걸릴 수 있습니다.<br>계속 진행하려면 아래 항목을 체크하고 확인을 눌러주세요.</p>
+    <label style="display:flex;align-items:center;gap:9px;font-size:.8rem;color:var(--txt);cursor:pointer;margin-bottom:20px;user-select:none">
+      <input type="checkbox" id="long-fetch-chk" onchange="const b=document.getElementById('long-fetch-confirm');b.disabled=!this.checked;b.style.opacity=this.checked?'1':'.4'" style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer">
+      수집 시간이 길어질 수 있음을 이해합니다
+    </label>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button onclick="cancelLongFetch()" style="padding:6px 16px;background:var(--bg3);border:1px solid var(--border);border-radius:7px;color:var(--txt2);font-size:.8rem;cursor:pointer;transition:all .15s" onmouseover="this.style.borderColor='var(--txt2)'" onmouseout="this.style.borderColor='var(--border)'">취소</button>
+      <button id="long-fetch-confirm" onclick="confirmLongFetch()" disabled style="padding:6px 16px;background:var(--blue);border:none;border-radius:7px;color:#fff;font-size:.8rem;font-weight:600;cursor:pointer;opacity:.4;transition:opacity .15s">확인</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── State ────────────────────────────────────────────────
 const CAT      = {diplomacy:'외교',defense:'국방',economy:'경제'};
@@ -683,15 +699,39 @@ function setCollectPeriod(btn){
   document.getElementById('collect-from').value=collectFrom;
   document.getElementById('collect-to').value=collectTo;
 }
+let _pendingCollectTo='';
 function onCollectDateChange(){
   const f=document.getElementById('collect-from').value;
   const t=document.getElementById('collect-to').value;
-  if(f&&t&&new Date(t)<new Date(f)){
-    toast('종료일이 시작일보다 앞입니다','err');
-    document.getElementById('collect-to').value='';collectTo='';return;
+  if(f&&t){
+    if(new Date(t)<new Date(f)){
+      toast('종료일이 시작일보다 앞입니다','err');
+      document.getElementById('collect-to').value='';collectTo='';return;
+    }
+    if((new Date(t)-new Date(f))/86400000>1095){
+      _pendingCollectTo=t;
+      document.getElementById('collect-to').value='';
+      document.getElementById('long-fetch-chk').checked=false;
+      document.getElementById('long-fetch-confirm').disabled=true;
+      document.getElementById('long-fetch-confirm').style.opacity='.4';
+      document.getElementById('long-fetch-modal').style.display='flex';
+      return;
+    }
   }
   collectFrom=f;collectTo=t;
   document.querySelectorAll('#period-chips .chip').forEach(b=>b.classList.remove('on'));
+}
+function cancelLongFetch(){
+  document.getElementById('long-fetch-modal').style.display='none';
+  _pendingCollectTo='';
+}
+function confirmLongFetch(){
+  document.getElementById('long-fetch-modal').style.display='none';
+  document.getElementById('collect-to').value=_pendingCollectTo;
+  collectTo=_pendingCollectTo;
+  collectFrom=document.getElementById('collect-from').value;
+  document.querySelectorAll('#period-chips .chip').forEach(b=>b.classList.remove('on'));
+  _pendingCollectTo='';
 }
 
 // ── Keywords ─────────────────────────────────────────────
