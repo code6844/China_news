@@ -24,17 +24,24 @@ def init_db():
     try:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS news_table (
-                id      TEXT PRIMARY KEY,
-                title   TEXT,
-                link    TEXT,
-                snippet TEXT,
-                source  TEXT,
-                date    TEXT,
-                lang    TEXT,
-                cat     TEXT,
-                kw      TEXT
+                id         TEXT PRIMARY KEY,
+                title      TEXT,
+                link       TEXT,
+                snippet    TEXT,
+                source     TEXT,
+                date       TEXT,
+                lang       TEXT,
+                cat        TEXT,
+                kw         TEXT,
+                country    TEXT,
+                media_type TEXT
             )
         ''')
+        # 기존 DB 마이그레이션: 컬럼이 없으면 추가
+        existing = {row[1] for row in conn.execute('PRAGMA table_info(news_table)')}
+        for col, typ in [('country', 'TEXT'), ('media_type', 'TEXT')]:
+            if col not in existing:
+                conn.execute(f'ALTER TABLE news_table ADD COLUMN {col} {typ}')
         conn.commit()
     finally:
         conn.close()
@@ -47,13 +54,64 @@ def save_to_db(items: list):
     try:
         conn.executemany(
             '''INSERT OR IGNORE INTO news_table
-               (id, title, link, snippet, source, date, lang, cat, kw)
-               VALUES (:id, :title, :link, :snippet, :source, :date, :lang, :cat, :kw)''',
+               (id, title, link, snippet, source, date, lang, cat, kw, country, media_type)
+               VALUES (:id, :title, :link, :snippet, :source, :date, :lang, :cat, :kw,
+                       :country, :media_type)''',
             items
         )
         conn.commit()
     finally:
         conn.close()
+
+
+# ── 매체 분류 규칙 ────────────────────────────────────────────
+_COUNTRY_RULES = [
+    (['조선일보', '중앙일보', '동아일보', '한겨레', '경향신문', '연합뉴스',
+      'YTN', 'KBS', 'MBC', 'SBS', '한국경제', '매일경제', '헤럴드경제',
+      '서울경제', '아시아경제', '뉴시스', '뉴스1', '오마이뉴스'], 'KR'),
+    (['New York Times', 'NYT', 'CNN', 'Washington Post', 'Wall Street Journal',
+      'WSJ', 'Reuters', 'Associated Press', 'AP News', 'Bloomberg', 'NBC',
+      'ABC News', 'CBS', 'Fox News', 'CNBC', 'Politico', 'Axios'], 'US'),
+    (['CGTN', 'Global Times', '人民网', '新华社', 'Xinhua', '环球时报',
+      '中国日报', 'China Daily', '凤凰网', '观察者网', '澎湃新闻'], 'CN'),
+    (['NHK', 'Nikkei', '読売新聞', '朝日新聞', '毎日新聞', 'Japan Times',
+      '産経新聞', '共同通信', 'Kyodo'], 'JP'),
+    (['BBC', 'The Guardian', 'Financial Times', 'The Times', 'Daily Mail',
+      'The Economist', 'Sky News'], 'GB'),
+    (['Al Jazeera', 'Al-Jazeera'], 'QA'),
+    (['RT ', 'TASS', 'Sputnik', 'Interfax'], 'RU'),
+]
+
+_MEDIA_TYPE_RULES = [
+    (['CGTN', '人民网', 'Xinhua', '新华社', 'Global Times', '환구시보',
+      'KBS', 'YTN', '연합뉴스', 'TASS', 'Sputnik', 'RT '], '관영'),
+    (['Wall Street Journal', 'WSJ', 'Financial Times', 'Bloomberg', 'Nikkei',
+      'CNBC', '한국경제', '매일경제', '헤럴드경제', '서울경제', '아시아경제'], '경제지'),
+    (['조선일보', '중앙일보', '동아일보', '한겨레', '경향신문', 'New York Times',
+      'Washington Post', 'Guardian', 'BBC', 'CNN', '読売新聞', '朝日新聞',
+      '毎日新聞', 'Japan Times', 'Al Jazeera'], '주요일간지'),
+    (['TechCrunch', 'Wired', 'The Verge', 'Ars Technica', 'ZDNet', 'CNET',
+      '블로터', 'IT조선', 'Engadget'], 'IT전문지'),
+    (['Politico', 'Axios', 'The Hill', 'Foreign Policy', 'Foreign Affairs'], '정치전문지'),
+]
+
+_LANG_COUNTRY_FALLBACK = {'ko': 'KR', 'zh': 'CN', 'en': 'US'}
+
+
+def classify_country(source: str, lang: str) -> str:
+    src = source or ''
+    for keywords, country in _COUNTRY_RULES:
+        if any(kw.lower() in src.lower() for kw in keywords):
+            return country
+    return _LANG_COUNTRY_FALLBACK.get(lang, 'XX')
+
+
+def classify_media_type(source: str) -> str:
+    src = source or ''
+    for keywords, mtype in _MEDIA_TYPE_RULES:
+        if any(kw.lower() in src.lower() for kw in keywords):
+            return mtype
+    return '기타'
 
 # ── Google News RSS ─────────────────────────────────────────
 LANG_PARAMS = {
@@ -184,9 +242,8 @@ def fetch_news():
     seen  = set()
     for entry in raw_entries:
         title = clean_title(entry.get('title', ''))
-        if not title or title in seen:
+        if not title:
             continue
-        seen.add(title)
 
         link   = entry.get('link', '')
         source = ''
@@ -198,19 +255,30 @@ def fetch_news():
             except AttributeError:
                 pass
 
+        # 같은 제목이라도 매체가 다르면 별도 기사로 수집
+        dedup_key = (title, source)
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
+        # 매체 정보를 포함한 고유 ID (link 없을 때도 source로 구분)
+        item_id = f"{link}||{source}" if link else f"{title}||{source}"
+
         summary   = strip_html(entry.get('summary', ''))[:200]
         published = entry.get('published', '')
 
         items.append({
-            'id':      link or title,
-            'title':   title,
-            'link':    link,
-            'snippet': summary,
-            'source':  source,
-            'date':    published,
-            'lang':    lang,
-            'cat':     cat,
-            'kw':      keyword,
+            'id':         item_id,
+            'title':      title,
+            'link':       link,
+            'snippet':    summary,
+            'source':     source,
+            'date':       published,
+            'lang':       lang,
+            'cat':        cat,
+            'kw':         keyword,
+            'country':    classify_country(source, lang),
+            'media_type': classify_media_type(source),
         })
 
     if items:
@@ -256,6 +324,7 @@ def analyze():
 오늘의 주요 트렌드 3~5가지를 불렛으로 정리
 주요 트렌드가 대한민국과 군사 안보에 미칠만한 영향 3~5가지를 블렛으로 정리
 주요 트렌드가 대한민국과 교류협력 분야에 미칠만한 영향 3~5가지를 블렛으로 정리
+수집기간이 3개월 이상일 경우 월별 주요 키워드 변화 추이 분석 결과 정리
 
 ## 🏛️ 외교 분야
 주요 외교 이슈와 특이사항 분석
