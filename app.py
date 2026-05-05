@@ -198,7 +198,7 @@ def analyze():
         lines.append(f"[{i+1}] [{cat_lbl}][{lang_lbl}] {n.get('title','')}{src}")
     news_text = '\n'.join(lines)
 
-    prompt = f"""당신은 중국 외교·국방·경제 전문 분석가입니다.
+    prompt = f"""당신은 동북아 외교·국방·경제 전문 분석가입니다.
 오늘 날짜: {today}
 수집된 뉴스: 외교 {dip}건, 국방 {def_}건, 경제 {eco}건 (총 {len(news_items)}건)
 
@@ -209,6 +209,8 @@ def analyze():
 
 ## 📊 핵심 동향 요약
 오늘의 주요 트렌드 3~5가지를 불렛으로 정리
+주요 트렌드가 대한민국과 군사 안보에 미칠만한 영향 3~5가지를 블렛으로 정리
+주요 트렌드가 대한민국과 교류협력 분야에 미칠만한 영향 3~5가지를 블렛으로 정리
 
 ## 🏛️ 외교 분야
 주요 외교 이슈와 특이사항 분석
@@ -226,7 +228,7 @@ def analyze():
         client  = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model='claude-haiku-4-5-20251001',
-            max_tokens=2048,
+            max_tokens=4096,
             messages=[{'role': 'user', 'content': prompt}]
         )
         return jsonify({
