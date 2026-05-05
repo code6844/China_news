@@ -811,9 +811,16 @@ function switchView(v){
 }
 
 // ── Fetch ────────────────────────────────────────────────
+function calcFetchTimeout(){
+  if(!collectFrom||!collectTo) return 30000;
+  const days=(new Date(collectTo)-new Date(collectFrom))/86400000;
+  const chunks=Math.ceil(days/45);
+  return Math.max(30000, chunks*5000); // 청크당 5초 여유, 최소 30초
+}
 async function fetchFeed(kw,lang,cat){
   const r=await fetch('/api/fetch',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({keyword:kw,lang,cat,date_from:collectFrom,date_to:collectTo}),signal:AbortSignal.timeout(30000)});
+    body:JSON.stringify({keyword:kw,lang,cat,date_from:collectFrom,date_to:collectTo}),
+    signal:AbortSignal.timeout(calcFetchTimeout())});
   const d=await r.json();
   if(!r.ok)throw new Error(d.error||`서버 오류 ${r.status}`);
   return d.items||[];
@@ -826,7 +833,9 @@ async function fetchAll(){
   const progLog=document.getElementById('prog-log');
   btn.disabled=true;btn.textContent='수집 중…';
   progBox.style.display='';progLog.innerHTML='';news=[];
-  setStatus('<span class="spin"></span> 뉴스 수집 중…');
+  const _estSec=collectFrom&&collectTo?Math.ceil((new Date(collectTo)-new Date(collectFrom))/86400000/45)*2*active.length:0;
+  const _estMsg=_estSec>30?` (예상 소요 약 ${_estSec<60?_estSec+'초':Math.ceil(_estSec/60)+'분'})`:'' ;
+  setStatus(`<span class="spin"></span> 뉴스 수집 중…${_estMsg}`);
   for(const k of active){
     const row=document.createElement('div');
     row.className='prog-item';
