@@ -686,10 +686,9 @@ function setCollectPeriod(btn){
 function onCollectDateChange(){
   const f=document.getElementById('collect-from').value;
   const t=document.getElementById('collect-to').value;
-  if(f&&t){
-    const diff=(new Date(t)-new Date(f))/(86400000);
-    if(diff>1095){toast('수집 기간은 최대 3년(1095일)입니다','err');
-      document.getElementById('collect-to').value='';collectTo='';return;}
+  if(f&&t&&new Date(t)<new Date(f)){
+    toast('종료일이 시작일보다 앞입니다','err');
+    document.getElementById('collect-to').value='';collectTo='';return;
   }
   collectFrom=f;collectTo=t;
   document.querySelectorAll('#period-chips .chip').forEach(b=>b.classList.remove('on'));
